@@ -1,0 +1,64 @@
+name: fhirvault
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: fhirvault
+      POSTGRES_USER: fhirvault
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fhirvault -d fhirvault"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.0
+    # Dev mode: in-container H2 and plain HTTP. The realm is imported on each fresh container.
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set KEYCLOAK_ADMIN_PASSWORD in deploy/.env}
+      # Every token gets this issuer, whichever hostname was used to request it.
+      KC_HOSTNAME: http://localhost:8081
+      KC_HEALTH_ENABLED: "true"
+      # Realm file placeholders, so no secret is committed.
+      FHIRVAULT_LOADER_CLIENT_SECRET: ${FHIRVAULT_LOADER_CLIENT_SECRET:?set FHIRVAULT_LOADER_CLIENT_SECRET in deploy/.env}
+      FHIRVAULT_DEMO_PASSWORD: ${FHIRVAULT_DEMO_PASSWORD:?set FHIRVAULT_DEMO_PASSWORD in deploy/.env}
+    volumes:
+      - ./keycloak/fhirvault-realm.json:/opt/keycloak/data/import/fhirvault-realm.json:ro
+    ports:
+      - "127.0.0.1:8081:8080"
+    healthcheck:
+      # No curl in the image; bash's /dev/tcp probes the management port.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/fhirvault
+      DB_USERNAME: fhirvault
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      # The iss the API accepts (browser-facing URL),
+      KEYCLOAK_ISSUER_URI: http://localhost:8081/realms/fhirvault
+      # and where it fetches signing keys inside the Compose network.
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: http://keycloak:8080/realms/fhirvault/protocol/openid-connect/certs
+      FHIRVAULT_CORS_ALLOWED_ORIGINS: ${FHIRVAULT_CORS_ALLOWED_ORIGINS:-http://localhost:3000}
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+
+volumes:
+  pgdata:
