@@ -1,0 +1,160 @@
+{
+  "info": {
+    "name": "fhirvault",
+    "description": "FHIR R4 + SMART on FHIR walkthrough for the fhirvault Docker Compose stack.\n\n1. Set the collection variables `loader_client_secret` and `demo_password` to the values in your deploy/.env (they are left empty here on purpose).\n2. Run a request from '0 Auth' to get a token (stored in `access_token`).\n3. Run the other folders. 'Demo patient' requests assume tools/loader/sample has been loaded.\n\nThe fhirvault-tester password grant is for local development only.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{"key": "token", "value": "{{access_token}}", "type": "string"}]
+  },
+  "variable": [
+    {"key": "base", "value": "http://localhost:8080/fhir"},
+    {"key": "token_url", "value": "http://localhost:8081/realms/fhirvault/protocol/openid-connect/token"},
+    {"key": "loader_client_secret", "value": ""},
+    {"key": "demo_password", "value": ""},
+    {"key": "access_token", "value": ""},
+    {"key": "observation_id", "value": ""}
+  ],
+  "item": [
+    {
+      "name": "0 Auth",
+      "item": [
+        {
+          "name": "System token (client credentials, system/*.cruds)",
+          "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+            "pm.test('token issued', () => pm.response.to.have.status(200));",
+            "pm.collectionVariables.set('access_token', pm.response.json().access_token);"
+          ]}}],
+          "request": {
+            "auth": {"type": "noauth"},
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/x-www-form-urlencoded"}],
+            "body": {"mode": "urlencoded", "urlencoded": [
+              {"key": "grant_type", "value": "client_credentials"},
+              {"key": "client_id", "value": "fhirvault-loader"},
+              {"key": "client_secret", "value": "{{loader_client_secret}}"}
+            ]},
+            "url": "{{token_url}}"
+          }
+        },
+        {
+          "name": "Patient token (patient-demo, launch/patient patient/*.rs patient/AuditEvent.rs)",
+          "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+            "pm.test('token issued', () => pm.response.to.have.status(200));",
+            "pm.collectionVariables.set('access_token', pm.response.json().access_token);"
+          ]}}],
+          "request": {
+            "auth": {"type": "noauth"},
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/x-www-form-urlencoded"}],
+            "body": {"mode": "urlencoded", "urlencoded": [
+              {"key": "grant_type", "value": "password"},
+              {"key": "client_id", "value": "fhirvault-tester"},
+              {"key": "username", "value": "patient-demo"},
+              {"key": "password", "value": "{{demo_password}}"},
+              {"key": "scope", "value": "openid launch/patient patient/*.rs patient/AuditEvent.rs"}
+            ]},
+            "url": "{{token_url}}"
+          }
+        },
+        {
+          "name": "Clinician token (clinician-demo, user/*.cruds user/AuditEvent.rs)",
+          "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+            "pm.test('token issued', () => pm.response.to.have.status(200));",
+            "pm.collectionVariables.set('access_token', pm.response.json().access_token);"
+          ]}}],
+          "request": {
+            "auth": {"type": "noauth"},
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/x-www-form-urlencoded"}],
+            "body": {"mode": "urlencoded", "urlencoded": [
+              {"key": "grant_type", "value": "password"},
+              {"key": "client_id", "value": "fhirvault-tester"},
+              {"key": "username", "value": "clinician-demo"},
+              {"key": "password", "value": "{{demo_password}}"},
+              {"key": "scope", "value": "openid user/*.cruds user/AuditEvent.rs"}
+            ]},
+            "url": "{{token_url}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "1 Discovery (public)",
+      "item": [
+        {"name": "CapabilityStatement", "request": {"auth": {"type": "noauth"}, "method": "GET", "url": "{{base}}/metadata"}},
+        {"name": "SMART configuration", "request": {"auth": {"type": "noauth"}, "method": "GET", "url": "{{base}}/.well-known/smart-configuration"}},
+        {"name": "No token -> 401 OperationOutcome", "request": {"auth": {"type": "noauth"}, "method": "GET", "url": "{{base}}/Patient"}}
+      ]
+    },
+    {
+      "name": "2 Demo patient (read & search)",
+      "item": [
+        {"name": "Read Patient/example-patient", "request": {"method": "GET", "url": "{{base}}/Patient/example-patient"}},
+        {"name": "Search patients by name", "request": {"method": "GET", "url": "{{base}}/Patient?name=exam"}},
+        {"name": "Observations: patient + category", "request": {"method": "GET", "url": "{{base}}/Observation?patient=example-patient&category=laboratory"}},
+        {"name": "Observations: patient + code + date range", "request": {"method": "GET", "url": "{{base}}/Observation?patient=example-patient&code=http://loinc.org|2339-0&date=ge2026-01-01&date=lt2027-01-01"}},
+        {"name": "Conditions for patient", "request": {"method": "GET", "url": "{{base}}/Condition?patient=example-patient"}},
+        {"name": "Active orders", "request": {"method": "GET", "url": "{{base}}/MedicationRequest?patient=example-patient&intent=order&status=active"}},
+        {"name": "Allergies", "request": {"method": "GET", "url": "{{base}}/AllergyIntolerance?patient=example-patient&clinical-status=active"}},
+        {"name": "Encounters in 2026, paged", "request": {"method": "GET", "url": "{{base}}/Encounter?patient=example-patient&date=2026&_count=1"}}
+      ]
+    },
+    {
+      "name": "3 Write & versioning (clinician or system token)",
+      "item": [
+        {
+          "name": "Create Observation",
+          "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+            "pm.test('201 Created', () => pm.response.to.have.status(201));",
+            "pm.collectionVariables.set('observation_id', pm.response.json().id);"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/fhir+json"}],
+            "body": {"mode": "raw", "raw": "{\n  \"resourceType\": \"Observation\",\n  \"status\": \"final\",\n  \"category\": [{\"coding\": [{\"system\": \"http://terminology.hl7.org/CodeSystem/observation-category\", \"code\": \"laboratory\"}]}],\n  \"code\": {\"coding\": [{\"system\": \"http://loinc.org\", \"code\": \"2339-0\", \"display\": \"Glucose [Mass/volume] in Blood\"}]},\n  \"subject\": {\"reference\": \"Patient/example-patient\"},\n  \"effectiveDateTime\": \"2026-05-01T08:00:00Z\",\n  \"valueQuantity\": {\"value\": 99, \"unit\": \"mg/dL\", \"system\": \"http://unitsofmeasure.org\", \"code\": \"mg/dL\"}\n}"},
+            "url": "{{base}}/Observation"
+          }
+        },
+        {
+          "name": "Update with If-Match W/\"1\"",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/fhir+json"}, {"key": "If-Match", "value": "W/\"1\""}],
+            "body": {"mode": "raw", "raw": "{\n  \"resourceType\": \"Observation\",\n  \"id\": \"{{observation_id}}\",\n  \"status\": \"amended\",\n  \"category\": [{\"coding\": [{\"system\": \"http://terminology.hl7.org/CodeSystem/observation-category\", \"code\": \"laboratory\"}]}],\n  \"code\": {\"coding\": [{\"system\": \"http://loinc.org\", \"code\": \"2339-0\"}]},\n  \"subject\": {\"reference\": \"Patient/example-patient\"},\n  \"effectiveDateTime\": \"2026-05-01T08:00:00Z\",\n  \"valueQuantity\": {\"value\": 101, \"unit\": \"mg/dL\", \"system\": \"http://unitsofmeasure.org\", \"code\": \"mg/dL\"}\n}"},
+            "url": "{{base}}/Observation/{{observation_id}}"
+          }
+        },
+        {"name": "Stale If-Match -> 412 (send twice)", "request": {"method": "PUT", "header": [{"key": "Content-Type", "value": "application/fhir+json"}, {"key": "If-Match", "value": "W/\"1\""}], "body": {"mode": "raw", "raw": "{\"resourceType\":\"Observation\",\"id\":\"{{observation_id}}\",\"status\":\"final\",\"category\":[{\"coding\":[{\"system\":\"http://terminology.hl7.org/CodeSystem/observation-category\",\"code\":\"laboratory\"}]}],\"code\":{\"coding\":[{\"system\":\"http://loinc.org\",\"code\":\"2339-0\"}]},\"subject\":{\"reference\":\"Patient/example-patient\"},\"effectiveDateTime\":\"2026-05-01T08:00:00Z\",\"valueQuantity\":{\"value\":101,\"unit\":\"mg/dL\",\"system\":\"http://unitsofmeasure.org\",\"code\":\"mg/dL\"}}"}, "url": "{{base}}/Observation/{{observation_id}}"}},
+        {"name": "vread version 1", "request": {"method": "GET", "url": "{{base}}/Observation/{{observation_id}}/_history/1"}},
+        {"name": "Instance history", "request": {"method": "GET", "url": "{{base}}/Observation/{{observation_id}}/_history"}},
+        {"name": "Invalid resource -> 422 OperationOutcome", "request": {"method": "POST", "header": [{"key": "Content-Type", "value": "application/fhir+json"}], "body": {"mode": "raw", "raw": "{\"resourceType\":\"Patient\",\"name\":[{\"family\":\"NoGender\"}]}"}, "url": "{{base}}/Patient"}},
+        {"name": "Delete referenced Patient -> 409", "request": {"method": "DELETE", "url": "{{base}}/Patient/example-patient"}},
+        {"name": "Delete Observation", "request": {"method": "DELETE", "url": "{{base}}/Observation/{{observation_id}}"}},
+        {"name": "Read deleted -> 410", "request": {"method": "GET", "url": "{{base}}/Observation/{{observation_id}}"}}
+      ]
+    },
+    {
+      "name": "4 Transaction bundle",
+      "item": [
+        {
+          "name": "Patient + Observation with urn:uuid reference",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/fhir+json"}],
+            "body": {"mode": "raw", "raw": "{\n  \"resourceType\": \"Bundle\",\n  \"type\": \"transaction\",\n  \"entry\": [\n    {\n      \"fullUrl\": \"urn:uuid:11111111-2222-4333-8444-555555555555\",\n      \"resource\": {\"resourceType\": \"Patient\", \"identifier\": [{\"system\": \"http://hospital.example.org/mrn\", \"value\": \"POSTMAN-1\"}], \"name\": [{\"family\": \"Postman\", \"given\": [\"Pat\"]}], \"gender\": \"unknown\"},\n      \"request\": {\"method\": \"POST\", \"url\": \"Patient\"}\n    },\n    {\n      \"fullUrl\": \"urn:uuid:11111111-2222-4333-8444-666666666666\",\n      \"resource\": {\"resourceType\": \"Observation\", \"status\": \"final\", \"category\": [{\"coding\": [{\"system\": \"http://terminology.hl7.org/CodeSystem/observation-category\", \"code\": \"laboratory\"}]}], \"code\": {\"coding\": [{\"system\": \"http://loinc.org\", \"code\": \"2339-0\"}]}, \"subject\": {\"reference\": \"urn:uuid:11111111-2222-4333-8444-555555555555\"}, \"effectiveDateTime\": \"2026-05-02\", \"valueQuantity\": {\"value\": 88, \"unit\": \"mg/dL\", \"system\": \"http://unitsofmeasure.org\", \"code\": \"mg/dL\"}},\n      \"request\": {\"method\": \"POST\", \"url\": \"Observation\"}\n    }\n  ]\n}"},
+            "url": "{{base}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "5 Audit trail",
+      "item": [
+        {"name": "Who accessed example-patient (patient token sees own, redacted)", "request": {"method": "GET", "url": "{{base}}/AuditEvent?patient=example-patient&_count=20"}},
+        {"name": "Audit events since a date", "request": {"method": "GET", "url": "{{base}}/AuditEvent?date=ge2026-01-01&action=R"}}
+      ]
+    }
+  ]
+}
