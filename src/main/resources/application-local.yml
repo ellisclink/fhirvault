@@ -1,0 +1,6 @@
+# Local development against Postgres on localhost. The password still comes from DB_PASSWORD.
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/fhirvault}
+    username: ${DB_USERNAME:fhirvault}
+    password: ${DB_PASSWORD}
