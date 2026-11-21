@@ -113,4 +113,4 @@ All data in this repository is synthetic (Synthea or hand-made).
 
 ## AI assistance
 
-I used Claude (Anthropic) as a coding assistant on this project. Edit this section to describe what you did yourself and what the assistant helped with.
+I used Claude (Anthropic) for a small part of this project: adding comments to the code, organizing files, and help with testing.
