@@ -1,0 +1,26 @@
+# Build output
+target/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets and local env
+.env
+*.env
+!*.env.example
+deploy/.env
+
+# Logs
+*.log
+
+# Native (no Docker) run: downloaded Keycloak and its data
+.local/
