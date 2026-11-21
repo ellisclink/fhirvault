@@ -1,0 +1,40 @@
+spring:
+  application:
+    name: fhirvault
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  flyway:
+    locations: classpath:db/migration
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Tokens must come from this realm (iss). Without noauth and without an issuer, startup fails closed.
+          # In Docker, where the API reaches Keycloak by another host, also set
+          # SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI to the internal certs URL.
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:}
+          audiences: ${FHIRVAULT_AUDIENCE:fhirvault-api}
+
+fhirvault:
+  smart:
+    # Browser-facing issuer URL advertised to SMART clients.
+    issuer: ${KEYCLOAK_ISSUER_URI:}
+  cors:
+    allowed-origins: ${FHIRVAULT_CORS_ALLOWED_ORIGINS:}
+
+server:
+  port: 8080
+  tomcat:
+    # Token search uses a literal "|" (system|code), often sent unencoded.
+    relaxed-query-chars: "|"
+
+logging:
+  pattern:
+    # Puts the X-Request-ID on every log line (set by RequestLoggingInterceptor).
+    level: "%5p [%X{requestId:-}]"
+  level:
+    # HAPI logs 4xx messages, which can echo search values like a birth date.
+    # RequestLoggingInterceptor already records client errors; log only 5xx here.
+    ca.uhn.fhir.rest.server.interceptor.ExceptionHandlingInterceptor: ERROR
